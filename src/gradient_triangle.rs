@@ -1,11 +1,8 @@
-use std::iter;
+use std::{iter, sync::Arc};
 
 use wgpu::{util::DeviceExt, PipelineCompilationOptions};
 use winit::{
-    event::*,
-    event_loop::EventLoop,
-    keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowBuilder},
+    application::ApplicationHandler, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId}
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -50,99 +47,44 @@ impl Vertex {
     }
 }
 
-// pub struct Color(Buffer<Vec4<F32>>);
-//pub struct Color(Buffer<0, Vec<F64>>);
-
-// #[derive(ConstDefault, Deref, From, Clone)]
-// pub struct PositionBuffer(Buffer<0, Vec4<F32>>);
-
-// pub type PositionBuffer = Buffer<0, Vec3<F32>>;
-
-// pub type ColorBuffer = Buffer<1, Vec3<F32>>;
-
-
-
-// // derived by macro, presumably
-// impl HasBuffer for PositionBuffer {
-//     type Buf = Buffer<0, Vec4<F32>>;
-// }
-
-// // derived by macro, presumably
-// impl HasBuffer for ColorBuffer {
-//     type Buf = Buffer<1, Vec4<F32>>;
-// }
-// pub const BUFFERLAYOUT: VertexBufferLayout = {
-//     let array_stride = std::mem::size_of::<Vertex>() as wgpu::BufferAddress;
-
-//     let position = PositionBuffer::INTO;
-
-//     let mut color = ColorBuffer::INTO;
-//     color.offset = std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress;
-
-//     VertexBufferLayout {
-//         array_stride: array_stride,
-//         step_mode: wgpu::VertexStepMode::Vertex,
-//         attributes: &[position, color],
-//     }
-// };
-
-// impl Vertex {
-
-//     fn desc() -> BufferLayout {
-
-//         let attribute1 = VertexAttribute::from(PositionBuffer::DEFAULT.0);
-//         let attribute2 = chain_buffers(attribute1, ColorBuffer::DEFAULT.0);
-
-//         // let const_attribute1 = wgpu::VertexAttribute {
-//         //     offset: 0,
-//         //     shader_location: 0,
-//         //     format: wgpu::VertexFormat::Float32x3,
-//         // };
-
-//         // let const_attribute2 = wgpu::VertexAttribute {
-//         //     format: wgpu::VertexFormat::Float32x3,
-//         //     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-//         //     shader_location: 1,
-//         // };
-
-//         // println!("variable attribute 1 {:#?}", attribute1);
-//         // println!("variable attribute 2 {:#?}", attribute2);
-
-//         // println!("manual attribute 1 {:#?}", const_attribute1);
-//         // println!("manual attribute 2 {:#?}", const_attribute2);
-//         BufferLayout {
-//             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-//             step_mode: wgpu::VertexStepMode::Vertex,
-//             //attributes: vec![attribute1, attribute2]
-//             attributes: vec![attribute1, attribute2]
-//         }
-//         // wgpu::VertexBufferLayout {
-//         //     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-//         //     step_mode: wgpu::VertexStepMode::Vertex,
-//         //     attributes: & [
-//         //         attribute1,
-//         //         attribute2
-//         //     ]
-//         // }
-//     }
-// }
-
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [0.0, 0.5, 0.0],
+        position: [-1.0, 1.0, 0.0],
         color: [1.0, 0.0, 0.0],
     },
     Vertex {
-        position: [-0.5, -0.5, 0.0],
+        position: [-1.0, -1.0, 0.0],
         color: [0.0, 1.0, 0.0],
     },
     Vertex {
-        position: [0.5, -0.5, 0.0],
+        position: [1.0, -1.0, 0.0],
         color: [0.0, 0.0, 1.0],
+    },
+
+    
+    Vertex {
+        position: [1.0, -1.0, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+    Vertex {
+        position: [1.0, 1.0, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [-1.0, 1.0, 0.0],
+        color: [1.0, 0.0, 0.0],
     },
 ];
 
-const INDICES: &[u16] = &[0, 1, 2, /* padding */ 0];
+const INDICES: &[u16] = &[0, 1, 2, 3, 4, 5,/* padding */ 0];
+
+
+pub struct App<'a> {
+    shader_as_string: String,
+    window: Option<Arc<Window>>,
+    state: Option<State<'a>>,
+}
+
 
 pub struct State<'a> {
     surface: wgpu::Surface<'a>,
@@ -155,11 +97,105 @@ pub struct State<'a> {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    window: &'a Window,
 }
 
+impl<'a> ApplicationHandler for App<'a> {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_none() {
+            let win_attr = Window::default_attributes().with_title("wgpu winit example");
+            // use Arc.
+            let window = Arc::new(
+                event_loop
+                    .create_window(win_attr)
+                    .expect("create window err."),
+            );
+            self.window = Some(window.clone());
+            let wgpu_ctx = pollster::block_on(State::new(window, &self.shader_as_string));
+            self.state = Some(wgpu_ctx);
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        //let mut surface_configured: bool = false;
+
+        //let Some(ref mut state) = self.state else {return;};
+        match event {
+            WindowEvent::CloseRequested => {
+                // macOS err: https://github.com/rust-windowing/winit/issues/3668
+                // This will be fixed as winit 0.30.1.
+                event_loop.exit();
+            },
+            WindowEvent::RedrawRequested => {
+                if let Some(wgpu_ctx) = self.state.as_mut() {
+                    wgpu_ctx.render();
+                }
+            }
+            
+            // WindowEvent::CloseRequested => {
+            //     println!("The close button was pressed; stopping");
+            //     event_loop.exit();
+            // },
+            // WindowEvent::RedrawRequested => {
+            //     // // This tells winit that we want another frame after this one
+            //     // self.state.window().request_redraw();
+
+            //     if !surface_configured {
+            //         return;
+            //     }
+
+            //     state.update();
+            //     match state.render() {
+            //         Ok(_) => {}
+            //         // Reconfigure the surface if it's lost or outdated
+            //         Err(
+            //             wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
+            //         ) => state.resize(state.size),
+            //         // The system is out of memory, we should probably quit
+            //         Err(wgpu::SurfaceError::OutOfMemory) => {
+            //             log::error!("OutOfMemory");
+            //             event_loop.exit();
+            //         }
+
+            //         // This happens when the a frame takes too long to present
+            //         Err(wgpu::SurfaceError::Timeout) => {
+            //             log::warn!("Surface timeout")
+            //         }
+            //     }
+            //     self.window.as_ref().unwrap().request_redraw();
+
+            // },
+            WindowEvent::Resized(new_size) => {
+                if let (Some(state), Some(window)) =
+                    (self.state.as_mut(), self.window.as_ref())
+                {
+                    state.resize((new_size.width, new_size.height));
+                    window.request_redraw();
+                }
+            }
+            // WindowEvent::RedrawRequested => {
+            //     // Redraw the application.
+            //     //
+            //     // It's preferable for applications that do not render continuously to render in
+            //     // this event rather than in AboutToWait, since rendering in here allows
+            //     // the program to gracefully handle redraws requested by the OS.
+
+            //     // Draw.
+
+            //     // Queue a RedrawRequested event.
+            //     //
+            //     // You only need to call this if you've determined that you need to redraw in
+            //     // applications which do not always need to. Applications that redraw continuously
+            //     // can render here instead.
+            //     self.window.as_ref().unwrap().request_redraw();
+            // }
+            _ => (),
+        }
+    }
+}
+
+
 impl<'a> State<'a> {
-    pub async fn new(window: &'a Window, shader_as_str: &str) -> State<'a> {
+    pub async fn new(window: Arc<Window>, shader_as_str: &str) -> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to our GPU
@@ -245,7 +281,7 @@ impl<'a> State<'a> {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[
                     Vertex::desc()
                     //BUFFERLAYOUT
@@ -255,13 +291,14 @@ impl<'a> State<'a> {
             fragment: Some(
                 wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent::REPLACE,
-                            alpha: wgpu::BlendComponent::REPLACE,
-                        }),
+                        blend: None,
+                        // Some(wgpu::BlendState {
+                        //     color: wgpu::BlendComponent::REPLACE,
+                        //     alpha: wgpu::BlendComponent::REPLACE,
+                        // }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                     compilation_options: PipelineCompilationOptions::default(),
@@ -314,21 +351,13 @@ impl<'a> State<'a> {
             vertex_buffer,
             index_buffer,
             num_indices,
-            window,
         }
     }
-
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
-
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-        }
+    pub fn resize(&mut self, new_size: (u32, u32)) {
+        let (width, height) = new_size;
+        self.config.width = width.max(1);
+        self.config.height = height.max(1);
+        self.surface.configure(&self.device, &self.config);
     }
 
     #[allow(unused_variables)]
@@ -384,72 +413,15 @@ impl<'a> State<'a> {
     }
 }
 
-pub async fn run_shader(shader_as_str: &str) {
+pub fn run_shader(shader_as_str: &str) {
     env_logger::init();
 
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    // State::new uses async code, so we're going to wait for it to finish
-    let mut state = State::new(&window, shader_as_str).await;
-    let mut surface_configured = false;
-
-    event_loop
-        .run(move |event, control_flow| {
-            match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == state.window().id() => {
-                    if !state.input(event) {
-                        match event {
-                            WindowEvent::CloseRequested
-                            | WindowEvent::KeyboardInput {
-                                event:
-                                    KeyEvent {
-                                        state: ElementState::Pressed,
-                                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                        ..
-                                    },
-                                ..
-                            } => control_flow.exit(),
-                            WindowEvent::Resized(physical_size) => {
-                                surface_configured = true;
-                                state.resize(*physical_size);
-                            }
-                            WindowEvent::RedrawRequested => {
-                                // This tells winit that we want another frame after this one
-                                state.window().request_redraw();
-
-                                if !surface_configured {
-                                    return;
-                                }
-
-                                state.update();
-                                match state.render() {
-                                    Ok(_) => {}
-                                    // Reconfigure the surface if it's lost or outdated
-                                    Err(
-                                        wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated,
-                                    ) => state.resize(state.size),
-                                    // The system is out of memory, we should probably quit
-                                    Err(wgpu::SurfaceError::OutOfMemory) => {
-                                        log::error!("OutOfMemory");
-                                        control_flow.exit();
-                                    }
-
-                                    // This happens when the a frame takes too long to present
-                                    Err(wgpu::SurfaceError::Timeout) => {
-                                        log::warn!("Surface timeout")
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        })
-        .unwrap();
+    let mut app = App {
+        shader_as_string: shader_as_str.to_owned(),
+        window: None,
+        state: None,
+    };
+    event_loop.run_app(&mut app).unwrap();
 }

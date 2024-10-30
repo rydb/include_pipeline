@@ -5,5 +5,5 @@ fn main() {
 
     parse_wgsl_shader(&shader_as_str);
 
-    pollster::block_on(run_shader(&shader_as_str));
+    run_shader(&shader_as_str);
 }
